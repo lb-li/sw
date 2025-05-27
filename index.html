@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据库表结构思维导图 - 全中文关联分析Gemini版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b0764 30%, #581c87 70%, #2563eb 100%);
+            color: #f0f9ff;
+            margin: 0;
+            padding: 0;
+        }
+        .graph-container {
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .node-rect {
+            stroke-width: 2.5px;
+            transition: fill 0.3s ease, stroke 0.3s ease, transform 0.2s ease-out, filter 0.2s ease-out;
+            filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+        }
+        .node-group:hover .node-rect {
+            transform: scale(1.05);
+            filter: brightness(1.3) drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+        }
+        .node-text {
+            pointer-events: none;
+            font-size: 13px;
+            font-weight: 500;
+            fill: #e0f2fe;
+        }
+        .node-text-en { /* Though displaying Chinese table name, class kept for structure */
+            pointer-events: none;
+            font-size: 10px;
+            font-weight: 400;
+            fill: #bae6fd;
+        }
+        .link {
+            stroke-opacity: 0.6;
+            stroke-width: 2px;
+            transition: stroke-opacity 0.3s ease, stroke-width 0.3s ease, stroke 0.3s ease;
+        }
+        .link-label {
+            font-size: 9px;
+            fill: #e0e7ff;
+            pointer-events: none;
+            text-anchor: middle;
+            paint-order: stroke;
+            stroke: rgba(30, 27, 75, 0.7);
+            stroke-width: 2px;
+            stroke-linejoin: round;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(23, 37, 84, 0.95);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            max-width: 350px; /* Increased width for Chinese text */
+            z-index: 10;
+            border: 1px solid rgba(129, 140, 248, 0.5);
+        }
+        .tooltip h4 {
+            font-weight: bold;
+            margin-bottom: 6px;
+            color: #93c5fd;
+            font-size: 15px;
+        }
+        .tooltip ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin: 0;
+        }
+        .tooltip li {
+            margin-bottom: 3px;
+            /* white-space: nowrap; Removed to allow wrapping for long Chinese names if needed */
+        }
+        .self-ref-icon {
+            font-size: 16px;
+            fill: #facc15;
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
+        }
+        .tooltip-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        .tooltip-content::-webkit-scrollbar-thumb {
+            background: #4f46e5;
+            border-radius: 10px;
+        }
+        .tooltip-content::-webkit-scrollbar-track {
+            background: #312e81;
+        }
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(59, 7, 100, 0.85);
+            padding: 12px 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            z-index: 5;
+            color: #e0e7ff;
+            border: 1px solid rgba(165, 180, 252, 0.5);
+        }
+        .controls label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 15px;
+        }
+        .controls input[type="range"] {
+            width: 160px;
+        }
+        .controls h3 {
+            color: #a5b4fc;
+        }
+        .controls button {
+            background-color: #4f46e5;
+            color: white;
+        }
+        .controls button:hover {
+            background-color: #4338ca;
+        }
+        .gemini-button {
+            cursor: pointer;
+            font-size: 18px;
+            fill: #fde047;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+        }
+        .node-group:hover .gemini-button {
+            opacity: 1;
+        }
+        .gemini-button:hover {
+            transform: scale(1.2);
+            filter: brightness(1.5);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background: linear-gradient(145deg, #3730a3, #5b21b6);
+            padding: 25px 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 650px; /* Increased width for more detailed analysis */
+            color: #e0e7ff;
+            border: 1px solid #a5b4fc;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #c7d2fe;
+            margin-bottom: 15px;
+        }
+        .modal-body {
+            font-size: 15px;
+            line-height: 1.6;
+            max-height: 70vh; /* Increased max height */
+            overflow-y: auto;
+            color: #e0e7ff;
+            white-space: pre-wrap;
+        }
+        .modal-body::-webkit-scrollbar { width: 6px; }
+        .modal-body::-webkit-scrollbar-thumb { background: #818cf8; border-radius: 10px; }
+        .modal-body::-webkit-scrollbar-track { background: #4338ca; }
+        .modal-close-button {
+            background-color: #6d28d9;
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+            margin-top: 20px;
+            float: right;
+        }
+        .modal-close-button:hover {
+            background-color: #5b21b6;
+        }
+        .loader {
+            border: 4px solid #4338ca;
+            border-top: 4px solid #a5b4fc;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="graph-container" id="graph-container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <div id="geminiModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 id="geminiModalTitle" class="modal-title">✨ 表格关联分析</h3>
+            <div id="geminiModalBody" class="modal-body">
+                </div>
+            <button id="geminiModalCloseButton" class="modal-close-button">关闭</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <h3 class="text-lg font-semibold mb-3">可视化选项</h3>
+        <div>
+            <label for="chargeStrength">节点斥力: <span id="chargeStrengthValue">-300</span></label>
+            <input type="range" id="chargeStrength" min="-1000" max="-50" value="-300" class="w-full accent-indigo-500">
+        </div>
+        <div class="mt-3">
+            <label for="linkDistance">连接距离: <span id="linkDistanceValue">180</span></label>
+            <input type="range" id="linkDistance" min="50" max="400" value="180" class="w-full accent-indigo-500">
+        </div>
+         <button id="resetButton" class="mt-4 w-full font-semibold py-2.5 px-4 rounded-md transition-colors duration-150">
+            重置布局
+        </button>
+    </div>
+
+    <script>
+        // --- Data Definition with Chinese Column Names ---
+        const tables = [
+          { id: "ticket_transactions", nameZh: "工单事务组表", nameEn: "ticket_transactions", type: "table", 
+            columns: [
+                "事务组ID (主键, BIGINT)", "父节点ID (外键, 指向自身, BIGINT)", "名称 (VARCHAR(50))", 
+                "顺序 (INT)", "状态 (VARCHAR(1))", "删除标志 (VARCHAR(1))", 
+                "备注 (VARCHAR(500))", "创建人编码 (VARCHAR(64))", "创建时间 (DATETIME)", 
+                "更新人编码 (VARCHAR(64))", "最后更新时间 (DATETIME)"
+            ], hasSelfRef: true },
+          { id: "ticket_category", nameZh: "工单事务标签表", nameEn: "ticket_category", type: "table", 
+            columns: [
+                "标签ID (主键, BIGINT)", "事务标签名称 (VARCHAR(500))", "备注 (VARCHAR(500))"
+            ]},
+          { id: "ticket_transactions_category", nameZh: "工单组子表", nameEn: "ticket_transactions_category", type: "junction", 
+            columns: [
+                "ID (主键, BIGINT)", "事务标签ID (外键, BIGINT)", "事务组ID (外键, BIGINT)"
+            ]},
+          { id: "ticket_field", nameZh: "工单字段自定义配置表", nameEn: "ticket_field", type: "table", 
+            columns: [
+                "字段ID (主键, BIGINT)", "字段名称 (VARCHAR(50))", "工单事务标签ID (外键, BIGINT)", 
+                "是否必填 (BIT)", "是否启用 (BIT)", "显示顺序 (INT)", "录入方式 (INT)", 
+                "下拉列表内容 (TEXT)", "备注 (VARCHAR(50))", "删除标志 (VARCHAR(1))", 
+                "创建人编码 (VARCHAR(64))", "创建时间 (DATETIME)", "更新人编码 (VARCHAR(64))", "最后更新时间 (DATETIME)"
+            ]},
+          { id: "ticket_field_custom", nameZh: "工单自定义字段值表", nameEn: "ticket_field_custom", type: "table", 
+            columns: [
+                "自定义值ID (主键, BIGINT)", "工单编号 (外键, VARCHAR(50))", "自定义字段ID (外键, BIGINT)", 
+                "字段名称 (VARCHAR(50))", "自定义字段值 (VARCHAR(256))", "文件KEY (VARCHAR(256))"
+            ]},
+          { id: "ticket_group_user", nameZh: "工单处理组用户表", nameEn: "ticket_group_user", type: "junction", 
+            columns: [
+                "ID (主键, BIGINT)", "处理组ID (外键, BIGINT)", "用户ID (BIGINT)", "角色 (VARCHAR(20))"
+            ]},
+          { id: "ticket", nameZh: "工单表", nameEn: "ticket", type: "table", 
+            columns: [
+                "工单编号 (主键, VARCHAR(50))", "处理组ID (外键, BIGINT)", "工单标题 (VARCHAR(100))", 
+                "工单标签ID (外键, BIGINT)", "紧急程度 (VARCHAR(50))", "工单来源 (VARCHAR(50))", 
+                "是否督办 (VARCHAR(1))", "工单描述 (VARCHAR(1000))", "状态 (VARCHAR(1))", 
+                "创建人编码 (VARCHAR(64))", "创建时间 (DATETIME)", "更新人编码 (VARCHAR(64))", "最后更新时间 (DATETIME)"
+            ]}
+        ];
+        const relations = [ 
+          { source: "ticket", target: "ticket_transactions", label: "处理组ID", type: "FK" }, 
+          { source: "ticket", target: "ticket_category", label: "工单标签ID", type: "FK" },
+          { source: "ticket_transactions_category", target: "ticket_transactions", label: "事务组ID", type: "FK" },
+          { source: "ticket_transactions_category", target: "ticket_category", label: "事务标签ID", type: "FK" },
+          { source: "ticket_field", target: "ticket_category", label: "工单事务标签ID", type: "FK" },
+          { source: "ticket_field_custom", target: "ticket_field", label: "自定义字段ID", type: "FK" },
+          { source: "ticket_field_custom", target: "ticket", label: "工单编号", type: "FK" },
+          { source: "ticket_group_user", target: "ticket_transactions", label: "处理组ID", type: "FK" },
+        ];
+
+        // --- D3 Setup ---
+        const container = document.getElementById('graph-container');
+        let width = container.clientWidth;
+        let height = container.clientHeight;
+        const tooltip = d3.select("#tooltip");
+        const svg = d3.select(container).append("svg")
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .style("width", "100%")
+            .style("height", "100%")
+            .style("background-color", "transparent");
+
+        svg.append("defs").append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "-0 -5 10 10")
+            .attr("refX", 22)
+            .attr("refY", 0)
+            .attr("orient", "auto")
+            .attr("markerWidth", 8)
+            .attr("markerHeight", 8)
+            .attr("xoverflow", "visible")
+            .append("svg:path")
+            .attr("d", "M 0,-5 L 10 ,0 L 0,5")
+            .attr("fill", "#a5b4fc")
+            .style("stroke", "none");
+        
+        let simulation = d3.forceSimulation(tables)
+            .force("link", d3.forceLink(relations).id(d => d.id).distance(200).strength(0.5))
+            .force("charge", d3.forceManyBody().strength(-350))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("x", d3.forceX(width / 2).strength(0.04))
+            .force("y", d3.forceY(height / 2).strength(0.04));
+
+        const linkGroup = svg.append("g").attr("class", "links");
+        const nodeGroup = svg.append("g").attr("class", "nodes");
+        const labelGroup = svg.append("g").attr("class", "labels");
+        let linkElements, nodeElements, labelElements;
+
+        // --- Modal Elements and Functions ---
+        const geminiModal = document.getElementById('geminiModal');
+        const geminiModalTitle = document.getElementById('geminiModalTitle');
+        const geminiModalBody = document.getElementById('geminiModalBody');
+        const geminiModalCloseButton = document.getElementById('geminiModalCloseButton');
+
+        geminiModalCloseButton.addEventListener('click', () => {
+            geminiModal.classList.remove('active');
+        });
+        geminiModal.addEventListener('click', (event) => { 
+            if (event.target === geminiModal) {
+                geminiModal.classList.remove('active');
+            }
+        });
+
+        function showGeminiModal(title, isLoading = false, content = "") {
+            geminiModalTitle.textContent = title;
+            if (isLoading) {
+                geminiModalBody.innerHTML = '<div class="loader"></div>';
+            } else {
+                geminiModalBody.innerHTML = content.replace(/\n/g, '<br>');
+            }
+            geminiModal.classList.add('active');
+        }
+
+        // --- Gemini API Call ---
+        async function fetchTableAnalysis(clickedTable) {
+            const clickedTableName = `${clickedTable.nameZh} (${clickedTable.nameEn})`;
+            showGeminiModal(`✨ 表格关联分析: ${clickedTableName}`, true);
+
+            // Construct context of all tables and relations
+            let schemaContext = "整个数据库包含以下表格和它们之间的关系：\n\n";
+            tables.forEach(table => {
+                schemaContext += `表名: ${table.nameZh} (${table.nameEn})\n`;
+                schemaContext += `列: ${table.columns.join('; ')}\n\n`;
+            });
+
+            schemaContext += "表之间的关系 (外键关联):\n";
+            relations.forEach(rel => {
+                const sourceTable = tables.find(t => t.id === rel.source.id || t.id === rel.source);
+                const targetTable = tables.find(t => t.id === rel.target.id || t.id === rel.target);
+                if (sourceTable && targetTable) {
+                    schemaContext += `- ${sourceTable.nameZh} 表通过 '${rel.label}' 关联到 ${targetTable.nameZh} 表。\n`;
+                }
+            });
+             if (clickedTable.hasSelfRef) {
+                schemaContext += `- ${clickedTable.nameZh} 表通过 '父节点ID' 与自身形成层级关系。\n`;
+            }
+
+
+            const prompt = `你是一个资深的数据库架构师。请基于以下整个数据库的结构信息，用中文分析并简洁地解释 '${clickedTableName}' 这个表在整个数据库系统中的主要作用、核心功能，以及它如何与其他表协同工作来支撑业务逻辑。请直接给出分析结果，不需要额外的客套话。\n\n数据库结构信息如下：\n${schemaContext}`;
+            
+            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("Gemini API Error:", errorData);
+                    showGeminiModal(`✨ 表格关联分析: ${clickedTableName}`, false, `抱歉，获取分析失败 (HTTP ${response.status})。请稍后再试。`);
+                    return;
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    showGeminiModal(`✨ 表格关联分析: ${clickedTableName}`, false, text);
+                } else {
+                    console.error("Gemini API Error: Unexpected response structure", result);
+                    showGeminiModal(`✨ 表格关联分析: ${clickedTableName}`, false, "抱歉，未能获取到有效的分析信息。");
+                }
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                showGeminiModal(`✨ 表格关联分析: ${clickedTableName}`, false, `发生网络错误或API调用失败，请检查控制台获取更多信息。`);
+            }
+        }
+
+
+        function updateGraph() {
+            linkGroup.selectAll("*").remove();
+            nodeGroup.selectAll("*").remove();
+            labelGroup.selectAll("*").remove();
+
+            linkElements = linkGroup.selectAll("line")
+                .data(relations)
+                .enter().append("line")
+                .attr("class", "link")
+                .attr("stroke", "#6366f1")
+                .attr("marker-end", "url(#arrowhead)");
+
+            labelElements = labelGroup.selectAll(".link-label")
+                .data(relations)
+                .enter().append("text")
+                .attr("class", "link-label")
+                .text(d => d.label)
+                .attr("dy", -4);
+
+            nodeElements = nodeGroup.selectAll(".node-group")
+                .data(tables, d => d.id)
+                .enter().append("g")
+                .attr("class", "node-group")
+                .style("transform-origin", "center center")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            const nodePadding = 12;
+            const nodeLineHeight = 15;
+
+            nodeElements.each(function(d) {
+                const g = d3.select(this);
+                const tempTextZh = svg.append("text").attr("class", "node-text").text(d.nameZh).style("opacity",0);
+                const tempTextEn = svg.append("text").attr("class", "node-text-en").text(d.nameEn).style("opacity",0);
+                const textWidthZh = tempTextZh.node().getComputedTextLength();
+                const textWidthEn = tempTextEn.node().getComputedTextLength();
+                tempTextZh.remove();
+                tempTextEn.remove();
+                
+                d.rectWidth = Math.max(textWidthZh, textWidthEn, 90) + 2 * nodePadding;
+                d.rectHeight = 2 * nodeLineHeight + 2 * nodePadding + (d.hasSelfRef ? nodeLineHeight * 1.2 : 0);
+            });
+            
+            nodeElements.append("rect")
+                .attr("class", "node-rect")
+                .attr("width", d => d.rectWidth)
+                .attr("height", d => d.rectHeight)
+                .attr("rx", 10)
+                .attr("ry", 10)
+                .attr("fill", d => d.type === 'junction' ? "#db2777" : "#06b6d4")
+                .attr("stroke", d => d.type === 'junction' ? "#be185d" : "#0891b2")
+                .on("mouseover", function(event, d) {
+                    tooltip.transition().duration(200).style("opacity", .98);
+                    let tooltipHtml = `<h4>${d.nameZh} (${d.nameEn})</h4>`;
+                    tooltipHtml += `<div class="tooltip-content max-h-52 overflow-y-auto"><ul>`;
+                    
+                    d.columns.forEach(col => {
+                        let displayCol = col;
+                        if (displayCol.includes("(外键, 指向自身")) { 
+                            displayCol = displayCol.replace("(外键, 指向自身", "<strong class='text-sky-300'>(外键, 指向自身</strong>");
+                        } else if (displayCol.includes("(主键")) {
+                            displayCol = displayCol.replace("(主键", "<strong class='text-amber-400'>(主键</strong>");
+                        } else if (displayCol.includes("(外键")) {
+                            displayCol = displayCol.replace("(外键", "<strong class='text-sky-400'>(外键</strong>");
+                        }
+                        tooltipHtml += `<li>${displayCol}</li>`;
+                    });
+                    tooltipHtml += `</ul></div>`;
+                    tooltip.html(tooltipHtml);
+
+                    linkElements.style('stroke-opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.3);
+                    linkElements.style('stroke-width', l => (l.source.id === d.id || l.target.id === d.id) ? 3 : 2);
+                    linkElements.style('stroke', l => (l.source.id === d.id || l.target.id === d.id) ? '#f59e0b' : '#6366f1');
+                    nodeElements.style('opacity', n => (n.id === d.id || relations.some(r => (r.source.id === d.id && r.target.id === n.id) || (r.target.id === d.id && r.source.id === n.id))) ? 1 : 0.4);
+                    d3.select(this.parentNode).raise();
+                })
+                .on("mousemove", function(event) {
+                    let x = event.pageX + 15;
+                    let y = event.pageY + 15;
+                    const tooltipNode = tooltip.node();
+                    if (x + tooltipNode.offsetWidth > window.innerWidth) {
+                        x = event.pageX - 15 - tooltipNode.offsetWidth;
+                    }
+                    if (y + tooltipNode.offsetHeight > window.innerHeight) {
+                        y = event.pageY - 15 - tooltipNode.offsetHeight;
+                    }
+                    tooltip.style("left", x + "px").style("top", y + "px");
+                })
+                .on("mouseout", function(event, d) {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                    linkElements.style('stroke-opacity', 0.6).style('stroke-width', 2).style('stroke', '#6366f1');
+                    nodeElements.style('opacity', 1);
+                });
+
+            nodeElements.append("text")
+                .attr("class", "node-text")
+                .attr("x", d => d.rectWidth / 2)
+                .attr("y", nodePadding + nodeLineHeight / 2)
+                .attr("dominant-baseline", "middle")
+                .attr("text-anchor", "middle")
+                .text(d => d.nameZh);
+
+            nodeElements.append("text")
+                .attr("class", "node-text-en")
+                .attr("x", d => d.rectWidth / 2)
+                .attr("y", nodePadding + nodeLineHeight + nodeLineHeight / 2)
+                .attr("dominant-baseline", "middle")
+                .attr("text-anchor", "middle")
+                .text(d => `(${d.nameEn})`);
+            
+            nodeElements.filter(d => d.hasSelfRef)
+                .append("text")
+                .attr("class", "self-ref-icon")
+                .attr("x", d => d.rectWidth / 2)
+                .attr("y", d => d.rectHeight - nodePadding / 1.2 )
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "ideographic")
+                .html("&#x21BA;");
+
+            nodeElements.append("text")
+                .attr("class", "gemini-button")
+                .attr("x", d => d.rectWidth - nodePadding / 1.5)
+                .attr("y", nodePadding / 1.5 + 2)
+                .attr("text-anchor", "middle")
+                .attr("dominant-baseline", "hanging")
+                .html("✨")
+                .on("click", function(event, d) {
+                    event.stopPropagation();
+                    fetchTableAnalysis(d); // Changed to call the new analysis function
+                });
+
+            nodeElements
+                .attr("transform", d => `translate(${d.x ? d.x - d.rectWidth/2 : width/2 - d.rectWidth/2}, ${d.y ? d.y - d.rectHeight/2 : height/2 - d.rectHeight/2}) scale(0)`)
+                .transition()
+                .duration(800)
+                .delay((d,i) => i * 70)
+                .ease(d3.easeElasticOut.amplitude(0.7).period(0.5))
+                .attr("transform", d => `translate(${d.x - d.rectWidth/2}, ${d.y - d.rectHeight/2}) scale(1)`);
+
+            linkElements.style("opacity", 0).transition().duration(750).delay((d,i) => tables.length * 70 + i * 30).style("opacity", 0.6);
+            labelElements.style("opacity", 0).transition().duration(750).delay((d,i) => tables.length * 70 + i * 30).style("opacity", 1);
+
+            simulation.nodes(tables).on("tick", ticked);
+            simulation.force("link").links(relations);
+            simulation.alpha(1).restart();
+        }
+        
+        function ticked() {
+            linkElements
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            nodeElements.each(function(d) {
+                if (d.fx == null && d.fy == null) {
+                    const currentTransform = d3.select(this).attr("transform");
+                    let scale = "scale(1)";
+                    if (currentTransform && currentTransform.includes("scale")) {
+                        scale = currentTransform.substring(currentTransform.indexOf("scale"));
+                    }
+                    d3.select(this).attr("transform", `translate(${d.x - d.rectWidth / 2}, ${d.y - d.rectHeight / 2}) ${scale}`);
+                }
+            });
+            
+            labelElements
+                .attr("x", d => (d.source.x + d.target.x) / 2)
+                .attr("y", d => (d.source.y + d.target.y) / 2);
+        }
+
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            const currentTransform = d3.select(this).attr("transform");
+            d.scaleSuffix = " scale(1)";
+            if (currentTransform && currentTransform.includes("scale")) {
+                 d.scaleSuffix = currentTransform.substring(currentTransform.indexOf("scale"));
+            }
+            d.fx = event.x;
+            d.fy = event.y;
+            d3.select(this).attr("transform", `translate(${d.fx - d.rectWidth / 2}, ${d.fy - d.rectHeight / 2})${d.scaleSuffix}`);
+            d3.select(this).raise();
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+            d3.select(this).attr("transform", `translate(${d.fx - d.rectWidth / 2}, ${d.fy - d.rectHeight / 2})${d.scaleSuffix}`);
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+        }
+        
+        const chargeStrengthSlider = document.getElementById('chargeStrength');
+        const chargeStrengthValue = document.getElementById('chargeStrengthValue');
+        const linkDistanceSlider = document.getElementById('linkDistance');
+        const linkDistanceValue = document.getElementById('linkDistanceValue');
+        const resetButton = document.getElementById('resetButton');
+
+        chargeStrengthSlider.addEventListener('input', (e) => {
+            const strength = +e.target.value;
+            chargeStrengthValue.textContent = strength;
+            simulation.force("charge").strength(strength);
+            simulation.alpha(0.3).restart();
+        });
+
+        linkDistanceSlider.addEventListener('input', (e) => {
+            const distance = +e.target.value;
+            linkDistanceValue.textContent = distance;
+            simulation.force("link").distance(distance);
+            simulation.alpha(0.3).restart();
+        });
+
+        resetButton.addEventListener('click', () => {
+            tables.forEach(node => {
+                node.fx = null;
+                node.fy = null;
+            });
+            nodeElements
+                .transition().duration(300).ease(d3.easeCubicOut)
+                .attr("transform", d => `translate(${width/2 - d.rectWidth/2}, ${height/2 - d.rectHeight/2}) scale(0)`)
+                .end()
+                .then(() => {
+                    simulation.alpha(1).restart();
+                     nodeElements
+                        .attr("transform", d => `translate(${d.x ? d.x - d.rectWidth/2 : width/2 - d.rectWidth/2}, ${d.y ? d.y - d.rectHeight/2 : height/2 - d.rectHeight/2}) scale(0)`)
+                        .transition()
+                        .duration(800)
+                        .delay((d,i) => i * 70)
+                        .ease(d3.easeElasticOut.amplitude(0.7).period(0.5))
+                        .attr("transform", d => `translate(${d.x - d.rectWidth/2}, ${d.y - d.rectHeight/2}) scale(1)`);
+                }).catch(err => console.error("Transition error on reset:", err));
+        });
+
+        function handleResize() {
+            width = container.clientWidth;
+            height = container.clientHeight;
+            svg.attr("viewBox", `0 0 ${width} ${height}`);
+            simulation.force("center", d3.forceCenter(width / 2, height / 2))
+                      .force("x", d3.forceX(width / 2).strength(0.04))
+                      .force("y", d3.forceY(height / 2).strength(0.04));
+            if(simulation.alpha() < 0.1) simulation.alpha(0.3).restart();
+            else simulation.restart();
+        }
+
+        window.addEventListener('resize', handleResize);
+
+        updateGraph();
+        handleResize();
+
+    </script>
+</body>
+</html>
